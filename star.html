@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="sv">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progressionskort - Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header-inputs {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .header-inputs div {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        input[type="text"],
+        input[type="date"] {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        canvas {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .controls {
+            margin-top: 20px;
+            gap: 15px;
+            display: flex;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background: #4a90e2;
+            color: white;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #357abd;
+        }
+
+        .btn-reset {
+            background: #e74c3c;
+        }
+
+        .btn-reset:hover {
+            background: #c0392b;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Progressionskort</h2>
+
+    <div class="header-inputs">
+        <div>
+            <label for="clientName">Namn:</label>
+            <input type="text" id="clientName" placeholder="Skriv in namn">
+        </div>
+        <div>
+            <label for="currentDate">Datum:</label>
+            <input type="date" id="currentDate">
+        </div>
+    </div>
+
+    <canvas id="spiderCanvas" width="1000" height="1000"></canvas>
+
+    <div class="controls">
+        <button class="btn-reset" onclick="resetChart()">Nollställ</button>
+        <button onclick="downloadPDF()">Ladda ner PDF (A4)</button>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+        const canvas = document.getElementById('spiderCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const numArms = 10;
+        const levels = 5;
+
+        // Nya tightare avstånd
+        const radiusStep = 42;
+        const zeroRadius = 38; // Avstånd till "Kan inte svara"-bladen
+        const circleSize = 18; // Storlek på valbara 1-5 cirklar
+        const zeroSize = 12; // Storlek på "Kan inte svara"-bladen
+
+        const questions = [
+            "Vet du vad du skulle vilja jobba med?",
+            "Tror du att dina kunskaper och erfarenheter kan användas på en arbetsplats?",
+            "Tror du själv att du klararav ett arbete eller studier?",
+            "Vet du vad du ska göra för att förbättra dina möjligheter att få ett jobb?",
+            "Söker jobb? Lön?",
+            "Hur bra är du på att samarbeta med andra?",
+            "Hur lätt har du att ta kontakt med personer du inte känner?",
+            "Hur tycker du din hälsa som helhet är (fysiskt, psykiskt, missbruk) i förhållande till att kunna jobba eller studera?",
+            "Har du tid i vardagen för att fokusera på att få ett arbete/ta del av aktiviteter eller studier?",
+            "Får du rätt slags stöd från familj och vänner när du behöver hjälp?"
+        ];
+
+        // -1 betyder inget val gjort, 0 betyder "Kan inte svara", 1-5 är nivåer
+        let selectedValues = new Array(numArms).fill(-1);
+
+        // Sätt dagens datum som förvalt
+        document.getElementById('currentDate').valueAsDate = new Date();
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // --- 1. Mitten (Blomman / Kan inte svara) ---
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 22, 0, Math.PI * 2);
+            ctx.fillStyle = "#e0e0e0";
+            ctx.fill();
+            ctx.fillStyle = "#333";
+            ctx.font = "bold 11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle"; // Centrerar texten i den grå cirkeln
+            ctx.fillText("Kan inte", centerX, centerY - 6);
+            ctx.fillText("svara", centerX, centerY + 8);
+
+            // --- 2. Armar, cirklar och texter ---
+            for (let i = 0; i < numArms; i++) {
+                const angle = (i * 2 * Math.PI / numArms) - Math.PI / 2;
+
+                // Nivå 0 (Bladen)
+                const x0 = centerX + Math.cos(angle) * zeroRadius;
+                const y0 = centerY + Math.sin(angle) * zeroRadius;
+                ctx.beginPath();
+                ctx.arc(x0, y0, zeroSize, 0, Math.PI * 2);
+                ctx.fillStyle = selectedValues[i] === 0 ? "#666" : "#f0f0f0";
+                ctx.strokeStyle = "#ccc";
+                ctx.fill();
+                ctx.stroke();
+
+                // Nivå 1 till 5
+                for (let level = 1; level <= levels; level++) {
+                    const r = zeroRadius + (level * radiusStep);
+                    const x = centerX + Math.cos(angle) * r;
+                    const y = centerY + Math.sin(angle) * r;
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, circleSize, 0, Math.PI * 2);
+                    ctx.fillStyle = selectedValues[i] === level ? "#1e3a8a" : `rgb(${255 - (level * 30)}, ${275 - (level * 30)}, 255)`;
+                    ctx.strokeStyle = "#ccc";
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // --- HÄR CENTRERAS SIFFRORNA ---
+                    ctx.fillStyle = selectedValues[i] === level ? "white" : "black";
+                    ctx.font = "bold 16px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle"; // Tvingar siffran att hamna i mitten av cirkeln
+                    ctx.fillText(level, x, y);
+
+                    // --- YTTRE TEXTER ---
+                    if (level === levels) {
+                        const textDist = r + 30;
+                        let tx = centerX + Math.cos(angle) * textDist;
+                        let ty = centerY + Math.sin(angle) * textDist;
+
+                        let hAlign = "center";
+                        let vAlign = "middle";
+                        let customWidth = 160;
+
+                        // --- JUSTERING AV POSITION ---
+
+                        // Fråga 3 (index 2) och Fråga 9 (index 8)
+                        if (i === 2 || i === 8) {
+                            vAlign = "bottom";
+                            hAlign = "center";
+                            ty -= 15; // <--- Knuffar UPP texten 15 pixlar från femman
+                        }
+                        // Fråga 4 (index 3) och Fråga 8 (index 7)
+                        else if (i === 3 || i === 7) {
+                            vAlign = "top";
+                            hAlign = "center";
+                            ty += 15; // <--- Knuffar NER texten 15 pixlar från femman
+                        }
+                        // Övriga armar (Toppen, botten och snett upp/ner)
+                        else {
+                            // Behåller kompass-logiken för sidorna så de inte krockar
+                            if (Math.cos(angle) > 0.5) hAlign = "left";
+                            else if (Math.cos(angle) < -0.5) hAlign = "right";
+
+                            if (Math.sin(angle) > 0.5) vAlign = "top";
+                            else if (Math.sin(angle) < -0.5) vAlign = "bottom";
+                        }
+
+                        // Anropa wrapText med de nya koordinaterna
+                        wrapText(ctx, questions[i], tx, ty, customWidth, 16, vAlign, hAlign);
+                    }
+                }
+            }
+
+            // --- 3. Linjerna (Polygonen) ---
+            const points = [];
+            for (let i = 0; i < numArms; i++) {
+                if (selectedValues[i] >= 0) {
+                    const angle = (i * 2 * Math.PI / numArms) - Math.PI / 2;
+                    const r = zeroRadius + (selectedValues[i] * radiusStep);
+                    points.push({ x: centerX + Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
+                }
+            }
+            if (points.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+                ctx.closePath();
+                ctx.strokeStyle = "rgba(30, 58, 138, 0.8)";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+        }
+
+        function wrapText(context, text, x, y, maxWidth, lineHeight, vAlign, hAlign) {
+            context.fillStyle = "#333";
+            context.font = "13px sans-serif";
+            context.textAlign = hAlign;
+
+            let words = text.split(' ');
+            let line = '';
+            let lines = [];
+
+            for (let n = 0; n < words.length; n++) {
+                let testLine = line + words[n] + ' ';
+                let metrics = context.measureText(testLine);
+                if (metrics.width > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n] + ' ';
+                } else { line = testLine; }
+            }
+            lines.push(line);
+
+            let startY = y;
+            if (vAlign === "bottom") {
+                // Textblocket börjar nerifrån och växer uppåt
+                startY = y - (lines.length - 1) * lineHeight;
+                context.textBaseline = "alphabetic";
+            } else if (vAlign === "top") {
+                // Textblocket börjar uppifrån och växer nedåt
+                startY = y;
+                context.textBaseline = "top";
+            } else {
+                // Textblocket centreras vertikalt
+                startY = y - ((lines.length - 1) * lineHeight) / 2;
+                context.textBaseline = "middle";
+            }
+
+            for (let k = 0; k < lines.length; k++) {
+                context.fillText(lines[k].trim(), x, startY + (k * lineHeight));
+            }
+        }
+
+        // Hantera klick för responsiv canvas
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+
+            for (let i = 0; i < numArms; i++) {
+                const angle = (i * 2 * Math.PI / numArms) - Math.PI / 2;
+
+                // Kolla om klick på "Kan inte svara"-bladet
+                const x0 = centerX + Math.cos(angle) * zeroRadius;
+                const y0 = centerY + Math.sin(angle) * zeroRadius;
+                if (Math.sqrt((mouseX - x0) ** 2 + (mouseY - y0) ** 2) < zeroSize) {
+                    selectedValues[i] = 0;
+                    draw();
+                    return;
+                }
+
+                // Kolla om klick på 1-5
+                for (let level = 1; level <= levels; level++) {
+                    const r = zeroRadius + (level * radiusStep);
+                    const x = centerX + Math.cos(angle) * r;
+                    const y = centerY + Math.sin(angle) * r;
+
+                    if (Math.sqrt((mouseX - x) ** 2 + (mouseY - y) ** 2) < circleSize) {
+                        selectedValues[i] = level;
+                        draw();
+                        return;
+                    }
+                }
+            }
+        });
+
+        function resetChart() {
+            selectedValues.fill(-1);
+            document.getElementById('clientName').value = "";
+            document.getElementById('currentDate').valueAsDate = new Date();
+            draw();
+        }
+
+        function downloadPDF() {
+            const name = document.getElementById('clientName').value || "Ej angivet";
+            const date = document.getElementById('currentDate').value || "Ej angivet";
+
+            const imgData = canvas.toDataURL('image/png');
+
+            // p = portrait, mm = millimeter, a4 = formatet
+            const pdf = new jsPDF('p', 'mm', 'a4');
+
+            // A4 pappersmått är 210 x 297 mm
+            const pageWidth = 210;
+            const margin = 10;
+
+            // Utskriftstext högst upp
+            pdf.setFontSize(18);
+            pdf.text("Progressionskort - Resultat", margin, 20);
+
+            pdf.setFontSize(12);
+            pdf.text(`Namn: ${name}`, margin, 30);
+            pdf.text(`Datum: ${date}`, margin, 37);
+
+            // Räkna ut bildens bredd och höjd (gör den lika bred som sidan minus marginaler)
+            const imgSize = pageWidth - (margin * 2);
+
+            // Placerar bilden 45mm från toppen
+            pdf.addImage(imgData, 'PNG', margin, 45, imgSize, imgSize);
+
+            pdf.save(`progressionskort_${name.replace(" ", "_")}.pdf`);
+        }
+
+        draw();
+    </script>
+</body>
+
+</html>
